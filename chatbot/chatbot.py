@@ -5,24 +5,40 @@ import os
 from sklearn.preprocessing import OrdinalEncoder
 import pickle
 
-
 st.set_page_config(page_title="🧠 Stroke Prediction App", page_icon="💉", layout="centered")
-
 
 if 'clear_form' not in st.session_state:
     st.session_state.clear_form = False
 
-
+# -----------------------------
+# Load model, dataset, and mean BMI
+# -----------------------------
 with st.spinner("Loading model and data..."):
-  model_path = os.path.join(os.path.dirname(__file__), '..', 'model', 'xgb_boost_model.pk1')
-  loaded_model = joblib.load(model_path) 
-    df2 = pd.read_csv('../train/train_results/dataset_dataframe.csv')
-    with open("../train/train_results/mean_bmi.pkl", "rb") as f:
-        mean_bmi = pickle.load(f)
+    try:
+        model_path = os.path.join(os.path.dirname(__file__), '..', 'model', 'xgb_boost_model.pk1')
+        loaded_model = joblib.load(model_path)
+    except FileNotFoundError:
+        st.error(f"Model file not found at {model_path}")
+        st.stop()
+
+    try:
+        df2 = pd.read_csv(os.path.join(os.path.dirname(__file__), '..', 'train', 'train_results', 'dataset_dataframe.csv'))
+    except FileNotFoundError:
+        st.warning("CSV dataset not found. Some features may not work correctly.")
+        df2 = None
+
+    try:
+        with open(os.path.join(os.path.dirname(__file__), '..', 'train', 'train_results', 'mean_bmi.pkl'), "rb") as f:
+            mean_bmi = pickle.load(f)
+    except FileNotFoundError:
+        st.warning("mean_bmi.pkl not found. Missing BMI values will be treated as 25.0")
+        mean_bmi = 25.0
 
 st.success("✅ XGBoost model loaded successfully!")
 
-
+# -----------------------------
+# Page title & sidebar
+# -----------------------------
 st.markdown(
     """
     <div style='text-align:center'>
@@ -33,7 +49,6 @@ st.markdown(
     unsafe_allow_html=True
 )
 
-
 st.sidebar.header("💡 About")
 st.sidebar.info(
     "Predict your stroke risk based on health indicators.\n\n"
@@ -42,15 +57,16 @@ st.sidebar.info(
 st.sidebar.markdown("---")
 st.sidebar.write("👨‍⚕️ Model: XGBoost Classifier")
 st.sidebar.write("📊 Trained with real patient data by the AI-Stroke-Shield team")
-st.sidebar.write("""
-🩺 Built by:  
+st.sidebar.write("""🩺 Built by:  
 - Sidney Mpenyana  
 - SG Rakobela  
 - VP Machave  
 - P Chauke
 """)
 
-
+# -----------------------------
+# User input form
+# -----------------------------
 with st.form(key='stroke_form'):
     st.markdown("### 🧍‍♂️ Demographic Information")
     col1, col2 = st.columns(2)
@@ -76,15 +92,17 @@ with st.form(key='stroke_form'):
     submit_button = st.form_submit_button(label='🔍 Predict Stroke')
     clear_button = st.form_submit_button(label='🧹 Clear Form')
 
-
+# -----------------------------
+# Clear form functionality
+# -----------------------------
 if clear_button:
     st.session_state.clear_form = True
     st.experimental_rerun()  
 
-
 if submit_button:
     st.session_state.clear_form = False
 
+    # Convert categorical to numerical
     hypertension = 1 if hypertension == "Yes" else 0
     heart_disease = 1 if heart_disease == "Yes" else 0
     ever_married = 1 if ever_married == "Yes" else 0
@@ -106,53 +124,50 @@ if submit_button:
     new_user_df = pd.DataFrame(new_user_data)
     new_user_df['bmi'] = pd.to_numeric(new_user_df['bmi'], errors='coerce').fillna(mean_bmi)
 
-    categorical_cols = ['gender', 'work_type', 'smoking_status']
-    combined_df_for_fitting = pd.concat(
-        [df2[categorical_cols].astype(str), new_user_df[categorical_cols].astype(str)],
-        ignore_index=True
-    )
-    oe = OrdinalEncoder()
-    oe.fit(combined_df_for_fitting)
-    new_user_df[categorical_cols] = oe.transform(new_user_df[categorical_cols])
+    # Ordinal encode categorical features
+    if df2 is not None:
+        categorical_cols = ['gender', 'work_type', 'smoking_status']
+        combined_df_for_fitting = pd.concat(
+            [df2[categorical_cols].astype(str), new_user_df[categorical_cols].astype(str)],
+            ignore_index=True
+        )
+        oe = OrdinalEncoder()
+        oe.fit(combined_df_for_fitting)
+        new_user_df[categorical_cols] = oe.transform(new_user_df[categorical_cols])
 
+    # Predict
     predicted_class = loaded_model.predict(new_user_df)[0]
     predicted_proba = float(loaded_model.predict_proba(new_user_df)[:, 1][0])
 
+    # Display results
     st.markdown("---")
     st.markdown("## 🧾 Prediction Results")
 
     if predicted_class == 1:
         st.error(f"⚠️ High risk of Stroke!\n\n**Probability:** {predicted_proba:.2%}")
-
         st.markdown("### 🩺 Stroke Prevention Tips")
-        st.info("""
-- 🧂 Reduce salt intake to help control blood pressure  
-- 🥗 Eat a balanced diet rich in fruits, vegetables, and whole grains  
-- 🚶 Stay physically active — aim for 30 mins/day  
-- 🚭 Quit smoking — it doubles stroke risk  
-- 🍷 Limit alcohol intake  
-- 💊 Manage chronic conditions like diabetes, hypertension, and cholesterol  
-- 🧘 Practice stress-reducing activities like meditation  
-- 🩺 Schedule regular check-ups with your doctor
-        """)
+        st.info("""- 🧂 Reduce salt intake  
+- 🥗 Eat a balanced diet  
+- 🚶 Exercise regularly  
+- 🚭 Quit smoking  
+- 🍷 Limit alcohol  
+- 💊 Manage chronic conditions  
+- 🧘 Stress reduction  
+- 🩺 Regular check-ups""")
         st.markdown(
-            "<p style='color:red; font-size:0.85rem;'>Source: WHO, CDC, and American Heart Association stroke prevention guidelines.</p>",
+            "<p style='color:red; font-size:0.85rem;'>Source: WHO, CDC, American Heart Association.</p>",
             unsafe_allow_html=True,
         )
-
     else:
         st.success(f"✅ Low risk of Stroke.\n\n**Probability:** {predicted_proba:.2%}")
-
         st.markdown("### ✅ Keep Up the Good Habits!")
-        st.info("""
-- Maintain a healthy diet and active lifestyle  
-- Avoid smoking and excessive alcohol  
-- Keep monitoring your blood pressure and glucose levels  
-- Stay consistent with medical check-ups  
-- Manage stress to protect your heart and brain
-        """)
+        st.info("""- Maintain a healthy diet and lifestyle  
+- Avoid smoking/alcohol  
+- Monitor BP and glucose  
+- Regular check-ups  
+- Manage stress""")
         st.markdown(
-            "<p style='color:green; font-size:0.85rem;'>Source: WHO, CDC, and American Heart Association stroke prevention guidelines.</p>",
+            "<p style='color:green; font-size:0.85rem;'>Source: WHO, CDC, American Heart Association.</p>",
             unsafe_allow_html=True,
         )
 
