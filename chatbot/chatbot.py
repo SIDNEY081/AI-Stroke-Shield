@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import joblib
+import os
 from sklearn.preprocessing import OrdinalEncoder
 import pickle
 
@@ -13,7 +14,8 @@ if 'clear_form' not in st.session_state:
 
 
 with st.spinner("Loading model and data..."):
-    loaded_model = joblib.load('../model/xgb_boost_model.pk1')
+  model_path = os.path.join(os.path.dirname(__file__), '..', 'model', 'xgb_boost_model.pk1')
+  loaded_model = joblib.load(model_path) 
     df2 = pd.read_csv('../train/train_results/dataset_dataframe.csv')
     with open("../train/train_results/mean_bmi.pkl", "rb") as f:
         mean_bmi = pickle.load(f)
